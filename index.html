@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Погода у Львові — найсильніші моделі</title>
+<title>Погода — порівняння моделей</title>
 <style>
   :root{--bg:#f6f7f9;--card:#fff;--ink:#1d232b;--mute:#6b7480;--line:#e3e6ea;--warm:#d9622b;--cold:#2b6fd9;--rain:#2b8fb3}
   @media (prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1d2127;--ink:#e8ebef;--mute:#9aa3ad;--line:#2d333b;--warm:#f08a5a;--cold:#6fa2f0;--rain:#5fc0e0}}
@@ -45,6 +45,15 @@
   details.sm summary{font-size:13px;font-weight:500;color:var(--mute);margin-top:8px}
   .links a{display:inline-block;margin:4px 8px 4px 0;color:var(--rain)}
   .err{color:#d94b2b}
+  #places{display:flex;gap:6px;overflow-x:auto;padding:4px 12px 6px;max-width:900px;margin:0 auto;scrollbar-width:none}
+  #places::-webkit-scrollbar{display:none}
+  #places button{flex:none;border-radius:99px;padding:5px 12px;font-size:14px}
+  #places button.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+  #psearch{max-width:900px;margin:0 auto;padding:0 12px 6px}
+  #pform{display:flex;gap:6px}
+  #pq{flex:1;min-width:0;font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+  #pres button{display:block;width:100%;text-align:left;margin-top:6px}
+  #pres .sub{margin-top:6px}
   .legend{display:flex;gap:6px;margin:8px 0;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
   .legend::-webkit-scrollbar{display:none}
   .legend span{flex:none;font-size:12px;border:1px solid var(--line);border-radius:99px;padding:2px 8px;cursor:pointer;user-select:none}
@@ -81,11 +90,16 @@
 <body>
 <header>
   <div class="hd">
-    <h1>Погода у Львові</h1>
+    <h1>Погода: <span id="pname">Львів</span></h1>
     <div class="sub" id="status">Завантаження…</div>
   </div>
   <button id="reload" aria-label="Оновити">↻</button>
 </header>
+<nav id="places" aria-label="Місця"></nav>
+<div id="psearch" hidden>
+  <form id="pform"><input id="pq" type="search" placeholder="Назва міста чи села" autocomplete="off"><button type="submit">Знайти</button></form>
+  <div id="pres"></div>
+</div>
 <main>
   <section class="card" id="now"></section>
 
@@ -102,7 +116,7 @@
   <section class="card">
     <details id="extra">
       <summary>Додаткові моделі (JMA, GEM, GRAPES, ACCESS-G, KMA, GraphCast)</summary>
-      <div class="sub" style="margin:6px 0">Незалежні, але для Львова менш точні: грубша сітка або нижчі результати в міжнародних порівняннях. Корисні як «друга думка».</div>
+      <div class="sub" style="margin:6px 0">Незалежні, але для заходу України менш точні: грубша сітка або нижчі результати в міжнародних порівняннях. Корисні як «друга думка».</div>
       <div id="extraDays"></div>
     </details>
   </section>
@@ -120,16 +134,31 @@
   <section class="card links">
     <h2>Інші джерела (відкриваються окремо)</h2>
     <a href="https://www.meteo.gov.ua/" target="_blank" rel="noopener">Укргідрометцентр</a>
+    <a id="windyLink" href="https://www.windy.com/49.842/24.032" target="_blank" rel="noopener">Windy</a>
+    <span id="lvivLinks">
     <a href="https://www.yr.no/en/forecast/daily-table/2-702550/Ukraine/Lviv/Lviv" target="_blank" rel="noopener">Yr.no</a>
-    <a href="https://www.windy.com/49.842/24.032" target="_blank" rel="noopener">Windy</a>
     <a href="https://www.meteoblue.com/uk/погода/тиждень/львів_україна_702550" target="_blank" rel="noopener">Meteoblue</a>
     <a href="https://www.meteoprog.com/ua/weather/Lviv/" target="_blank" rel="noopener">Meteoprog</a>
     <a href="https://sinoptik.ua/pohoda/lviv" target="_blank" rel="noopener">Sinoptik</a>
+    </span>
     <div class="sub" style="margin-top:6px">Дані моделей: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0).</div>
   </section>
 </main>
 <script>
-const LAT = 49.8397, LON = 24.0297, DAYS = 7, HOURS = 72;
+const DAYS = 7, HOURS = 72;
+// місця: координати населених пунктів (для сіл — приблизно центр села)
+const PLACES = [
+  {id:"lviv",      name:"Львів",            lat:49.8397, lon:24.0297},
+  {id:"skole",     name:"Сколе",            lat:49.0364, lon:23.5133},
+  {id:"slavske",   name:"Славське",         lat:48.8483, lon:23.4489},
+  {id:"mukachevo", name:"Мукачево",         lat:48.4414, lon:22.7178},
+  {id:"osmoloda",  name:"Осмолода",         lat:48.6639, lon:24.0181},
+  {id:"stara-huta",name:"Стара Гута",       lat:48.6300, lon:24.1900},
+  {id:"frankivsk", name:"Івано-Франківськ", lat:48.9226, lon:24.7111},
+  {id:"ternopil",  name:"Тернопіль",        lat:49.5535, lon:25.5948}
+];
+let CUSTOM = []; try{ CUSTOM = JSON.parse(localStorage.getItem("pogoda.places")||"[]"); }catch(e){}
+let PLACE = PLACES[0], LAT = PLACE.lat, LON = PLACE.lon, LOADTOK = 0;
 // grp: main — основні; reg — регіональні високої роздільності (перевіряється покриття); extra — додаткові
 const MODELS = [
   {id:"ecmwf_ifs",            name:"ECMWF IFS 9 км",            grp:"main",  step:1, c:"#1f77b4"},
@@ -186,16 +215,18 @@ async function getEnsemble(){
   }
   return null;
 }
-// чи модель дає дані для Львова (регіональні поза своєю зоною повертають порожні значення)
+// чи модель дає дані для вибраного місця (регіональні поза своєю зоною повертають порожні значення)
 function covers(d){
   if(!d || !d.hourly || !d.hourly.temperature_2m) return false;
   return d.hourly.temperature_2m.slice(0,48).some(v=>v!=null);
 }
 
 async function load(){
+  const tok = ++LOADTOK;
   const st = document.getElementById("status");
   st.textContent = "Завантаження…";
   const [res, ens] = await Promise.all([ Promise.all(MODELS.map(m=>getJSON(fcUrl(m.id)).then(d=>d||getJSON(fcUrlBasic(m.id))))), getEnsemble() ]);
+  if(tok !== LOADTOK) return; // тим часом вибрали інше місце
   RES = res.map((d,j)=> covers(d) ? d : null);
   ENS = ens;
   const ok = RES.filter(Boolean).length;
@@ -209,7 +240,7 @@ async function load(){
   st.textContent = "Оновлено " + new Date().toLocaleString("uk-UA",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) +
     (failed.length? ` · недоступні: ${failed.join(", ")}` : "") + (ENS? "" : " · ансамбль ECMWF недоступний");
   document.getElementById("regional").textContent =
-    "Регіональні моделі: " + (regOk.length? "покривають Львів — "+regOk.join(", ") : "жодна не покриває Львів") +
+    "Регіональні моделі: " + (regOk.length? "покривають це місце — "+regOk.join(", ") : "жодна не покриває це місце") +
     (regNo.length? "; не покривають або недоступні — "+regNo.join(", ") : "") + ".";
 }
 
@@ -513,13 +544,14 @@ function vUrl(id, vars){
 }
 let vLoaded=false;
 async function loadVerify(){
-  const out=document.getElementById("vout");
+  const out=document.getElementById("vout"), vp=PLACE;
   out.innerHTML='<div class="sub">Завантаження…</div>';
   const res = await Promise.all(MODELS.map(async m=>{
     let d = await getJSON(vUrl(m.id, ["temperature_2m","precipitation","snowfall"]));
     if(!d) d = await getJSON(vUrl(m.id, ["temperature_2m","precipitation"]));
     return d && d.hourly && (d.hourly.temperature_2m||[]).some(v=>v!=null) ? d : null;
   }));
+  if(vp!==PLACE) return;
   const base=res.find(Boolean);
   if(!base){ out.innerHTML='<div class="err">Не вдалося отримати архів прогнозів. Спробуйте пізніше.</div>'; return; }
   vLoaded=true;
@@ -565,7 +597,56 @@ let rzT=null, lastW=window.innerWidth;
 window.addEventListener("resize", ()=>{ if(Math.abs(window.innerWidth-lastW)<20) return; lastW=window.innerWidth;
   clearTimeout(rzT); rzT=setTimeout(()=>{ if(RES.length){ renderHourly(); } }, 200); });
 document.getElementById("reload").onclick = ()=>{ load(); if(document.getElementById("verify").open) loadVerify(); };
-load();
+// ===== вибір місця =====
+function allPlaces(){ return PLACES.concat(CUSTOM); }
+function saveCustom(){ try{ localStorage.setItem("pogoda.places", JSON.stringify(CUSTOM)); }catch(e){} }
+function renderPlaces(){
+  const nav=document.getElementById("places");
+  nav.innerHTML = allPlaces().map(p=>`<button data-id="${p.id}" class="${p===PLACE?'on':''}">${p.name}${p===PLACE&&p.custom?' ✕':''}</button>`).join("") + `<button data-id="+">＋ інше</button>`;
+  nav.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.id;
+    if(id==="+"){ const ps=document.getElementById("psearch"); ps.hidden=!ps.hidden; if(!ps.hidden) document.getElementById("pq").focus(); return; }
+    const p=allPlaces().find(x=>x.id===id); if(!p) return;
+    if(p===PLACE && p.custom){ CUSTOM=CUSTOM.filter(x=>x!==p); saveCustom(); selectPlace(PLACES[0]); return; } // ✕ — прибрати своє місце
+    selectPlace(p);
+  });
+  const on=nav.querySelector("button.on"); if(on && on.scrollIntoView) on.scrollIntoView({inline:"center",block:"nearest"});
+}
+function selectPlace(p, fromHash){
+  PLACE=p; LAT=p.lat; LON=p.lon;
+  document.getElementById("pname").textContent=p.name;
+  document.title="Погода: "+p.name;
+  document.getElementById("windyLink").href=`https://www.windy.com/${p.lat.toFixed(3)}/${p.lon.toFixed(3)}`;
+  document.getElementById("lvivLinks").hidden = p.id!=="lviv";
+  try{ localStorage.setItem("pogoda.last", p.id); }catch(e){}
+  if(!fromHash){ try{ if(p.custom) history.replaceState(null,"",location.pathname+location.search); else location.hash=p.id; }catch(e){} }
+  renderPlaces();
+  CUR.k=null; CUR.manual=false; vLoaded=false; document.getElementById("vout").innerHTML="";
+  load(); if(document.getElementById("verify").open) loadVerify();
+}
+document.getElementById("pform").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const q=document.getElementById("pq").value.trim(), box=document.getElementById("pres"); if(!q) return;
+  box.innerHTML='<div class="sub">Пошук…</div>';
+  const d=await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=uk&format=json`);
+  const rs=(d&&d.results)||[];
+  if(!rs.length){ box.innerHTML='<div class="sub">Нічого не знайдено. Спробуйте іншу назву або латинкою.</div>'; return; }
+  box.innerHTML=rs.map((x,i)=>`<button data-i="${i}">${x.name}<span class="small">${[x.admin2,x.admin1,x.country].filter(Boolean).join(", ")}${x.elevation!=null?" · "+Math.round(x.elevation)+" м":""}</span></button>`).join("");
+  box.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    const x=rs[+b.dataset.i], id="c"+x.latitude.toFixed(3)+"_"+x.longitude.toFixed(3);
+    let p=allPlaces().find(y=>y.id===id);
+    if(!p){ p={id, name:x.name, lat:x.latitude, lon:x.longitude, custom:true}; CUSTOM.push(p); saveCustom(); }
+    box.innerHTML=""; document.getElementById("pq").value=""; document.getElementById("psearch").hidden=true;
+    selectPlace(p);
+  });
+});
+function placeFromHash(){ const h=(location.hash||"").slice(1); return PLACES.find(p=>p.id===h)||null; }
+window.addEventListener("hashchange", ()=>{ const p=placeFromHash(); if(p && p!==PLACE) selectPlace(p,true); });
+(function init(){
+  let p=placeFromHash();
+  if(!p){ let last=null; try{ last=localStorage.getItem("pogoda.last"); }catch(e){} p=allPlaces().find(x=>x.id===last)||PLACES[0]; }
+  selectPlace(p, true);
+})();
 </script>
 </body>
 </html>
