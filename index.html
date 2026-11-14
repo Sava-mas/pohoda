@@ -48,6 +48,9 @@
   #places{display:flex;gap:6px;overflow-x:auto;padding:4px 12px 6px;max-width:900px;margin:0 auto;scrollbar-width:none}
   #places::-webkit-scrollbar{display:none}
   #places button{flex:none;border-radius:99px;padding:5px 12px;font-size:14px}
+  #places button .x{margin-left:8px;padding:0 2px;opacity:.75}
+  #pres .chips{display:flex;flex-wrap:wrap;gap:6px}
+  #pres .chips button{display:inline-block;width:auto;margin-top:6px;border-radius:99px;padding:4px 10px;font-size:13px}
   #places button.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
   #psearch{max-width:900px;margin:0 auto;padding:0 12px 6px}
   #pform{display:flex;gap:6px}
@@ -157,7 +160,11 @@ const PLACES = [
   {id:"frankivsk", name:"Івано-Франківськ", lat:48.9226, lon:24.7111},
   {id:"ternopil",  name:"Тернопіль",        lat:49.5535, lon:25.5948}
 ];
-let CUSTOM = []; try{ CUSTOM = JSON.parse(localStorage.getItem("pogoda.places")||"[]"); }catch(e){}
+// LIST — список місць користувача (крім Львова, який є завжди); зберігається на пристрої
+let LIST = null;
+try{ const v=JSON.parse(localStorage.getItem("pogoda.list")||"null"); if(Array.isArray(v)) LIST=v.filter(x=>x&&x.id&&x.id!=="lviv"&&typeof x.lat==="number"); }catch(e){}
+if(!LIST){ LIST = PLACES.slice(1).map(x=>({...x}));
+  try{ const old=JSON.parse(localStorage.getItem("pogoda.places")||"[]"); old.forEach(x=>{ if(x&&x.id&&!LIST.some(y=>y.id===x.id)) LIST.push(x); }); }catch(e){} }
 let PLACE = PLACES[0], LAT = PLACE.lat, LON = PLACE.lon, LOADTOK = 0;
 // grp: main — основні; reg — регіональні високої роздільності (перевіряється покриття); extra — додаткові
 const MODELS = [
@@ -598,19 +605,27 @@ window.addEventListener("resize", ()=>{ if(Math.abs(window.innerWidth-lastW)<20)
   clearTimeout(rzT); rzT=setTimeout(()=>{ if(RES.length){ renderHourly(); } }, 200); });
 document.getElementById("reload").onclick = ()=>{ load(); if(document.getElementById("verify").open) loadVerify(); };
 // ===== вибір місця =====
-function allPlaces(){ return PLACES.concat(CUSTOM); }
-function saveCustom(){ try{ localStorage.setItem("pogoda.places", JSON.stringify(CUSTOM)); }catch(e){} }
+function allPlaces(){ return [PLACES[0]].concat(LIST); }
+function saveList(){ try{ localStorage.setItem("pogoda.list", JSON.stringify(LIST)); }catch(e){} }
+function addPlace(p){ if(p.id!=="lviv" && !LIST.some(x=>x.id===p.id)){ LIST.push(p); saveList(); } return allPlaces().find(x=>x.id===p.id); }
+function removePlace(p){ LIST=LIST.filter(x=>x!==p); saveList(); if(p===PLACE) selectPlace(PLACES[0]); else renderPlaces(); renderSuggest(); }
 function renderPlaces(){
   const nav=document.getElementById("places");
-  nav.innerHTML = allPlaces().map(p=>`<button data-id="${p.id}" class="${p===PLACE?'on':''}">${p.name}${p===PLACE&&p.custom?' ✕':''}</button>`).join("") + `<button data-id="+">＋ інше</button>`;
-  nav.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  nav.innerHTML = allPlaces().map(p=>`<button data-id="${p.id}" class="${p===PLACE?'on':''}">${p.name}${p===PLACE&&p.id!=="lviv"?'<span class="x" title="Прибрати зі списку" aria-label="Прибрати зі списку">✕</span>':''}</button>`).join("") + `<button data-id="+">＋ додати</button>`;
+  nav.querySelectorAll("button").forEach(b=>b.onclick=e=>{
     const id=b.dataset.id;
-    if(id==="+"){ const ps=document.getElementById("psearch"); ps.hidden=!ps.hidden; if(!ps.hidden) document.getElementById("pq").focus(); return; }
+    if(id==="+"){ const ps=document.getElementById("psearch"); ps.hidden=!ps.hidden; if(!ps.hidden){ renderSuggest(); document.getElementById("pq").focus(); } return; }
     const p=allPlaces().find(x=>x.id===id); if(!p) return;
-    if(p===PLACE && p.custom){ CUSTOM=CUSTOM.filter(x=>x!==p); saveCustom(); selectPlace(PLACES[0]); return; } // ✕ — прибрати своє місце
-    selectPlace(p);
+    if(e.target.closest(".x")){ removePlace(p); return; }   // ✕ — прибрати місце зі списку
+    if(p!==PLACE) selectPlace(p);
   });
   const on=nav.querySelector("button.on"); if(on && on.scrollIntoView) on.scrollIntoView({inline:"center",block:"nearest"});
+}
+// у панелі додавання: запропонувати стандартні місця, яких зараз немає у списку
+function renderSuggest(){
+  const box=document.getElementById("pres"), miss=PLACES.slice(1).filter(x=>!LIST.some(y=>y.id===x.id));
+  box.innerHTML = miss.length? `<div class="sub">Повернути до списку:</div><div class="chips">${miss.map(x=>`<button data-pid="${x.id}">${x.name}</button>`).join("")}</div>` : "";
+  box.querySelectorAll("button[data-pid]").forEach(b=>b.onclick=()=>{ const x=PLACES.find(y=>y.id===b.dataset.pid); document.getElementById("psearch").hidden=true; selectPlace(addPlace({...x})); });
 }
 function selectPlace(p, fromHash){
   PLACE=p; LAT=p.lat; LON=p.lon;
@@ -619,7 +634,7 @@ function selectPlace(p, fromHash){
   document.getElementById("windyLink").href=`https://www.windy.com/${p.lat.toFixed(3)}/${p.lon.toFixed(3)}`;
   document.getElementById("lvivLinks").hidden = p.id!=="lviv";
   try{ localStorage.setItem("pogoda.last", p.id); }catch(e){}
-  if(!fromHash){ try{ if(p.custom) history.replaceState(null,"",location.pathname+location.search); else location.hash=p.id; }catch(e){} }
+  if(!fromHash){ try{ if(PLACES.some(x=>x.id===p.id)) location.hash=p.id; else history.replaceState(null,"",location.pathname+location.search); }catch(e){} }
   renderPlaces();
   CUR.k=null; CUR.manual=false; vLoaded=false; document.getElementById("vout").innerHTML="";
   load(); if(document.getElementById("verify").open) loadVerify();
@@ -634,13 +649,12 @@ document.getElementById("pform").addEventListener("submit", async e=>{
   box.innerHTML=rs.map((x,i)=>`<button data-i="${i}">${x.name}<span class="small">${[x.admin2,x.admin1,x.country].filter(Boolean).join(", ")}${x.elevation!=null?" · "+Math.round(x.elevation)+" м":""}</span></button>`).join("");
   box.querySelectorAll("button").forEach(b=>b.onclick=()=>{
     const x=rs[+b.dataset.i], id="c"+x.latitude.toFixed(3)+"_"+x.longitude.toFixed(3);
-    let p=allPlaces().find(y=>y.id===id);
-    if(!p){ p={id, name:x.name, lat:x.latitude, lon:x.longitude, custom:true}; CUSTOM.push(p); saveCustom(); }
+    const p=addPlace({id, name:x.name, lat:x.latitude, lon:x.longitude});
     box.innerHTML=""; document.getElementById("pq").value=""; document.getElementById("psearch").hidden=true;
     selectPlace(p);
   });
 });
-function placeFromHash(){ const h=(location.hash||"").slice(1); return PLACES.find(p=>p.id===h)||null; }
+function placeFromHash(){ const h=(location.hash||"").slice(1); const x=PLACES.find(p=>p.id===h); return x? addPlace({...x}) : null; } // місце з посилання повертається до списку
 window.addEventListener("hashchange", ()=>{ const p=placeFromHash(); if(p && p!==PLACE) selectPlace(p,true); });
 (function init(){
   let p=placeFromHash();
