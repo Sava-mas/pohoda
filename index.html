@@ -37,6 +37,12 @@
   .mods{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:6px;font-size:13px}
   .mods div{display:flex;justify-content:space-between;gap:6px;border-bottom:1px dashed var(--line);padding:3px 0}
   .mods span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #warn h2{margin-bottom:4px}
+  .wl{list-style:none;margin:0;padding:0}
+  .wl li{padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+  .wl li:first-child{border-top:none}
+  .wl .wn{font-weight:600}
+  .wl .lv{font-size:11px;padding:1px 7px;border-radius:99px;margin-left:6px;white-space:nowrap}
   .desc{font-size:17px;font-weight:600;margin-top:2px}
   .outlook{margin:10px 0 0;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--line) 45%,transparent);font-size:14px}
   .outlook b{font-weight:600}
@@ -105,6 +111,7 @@
 </div>
 <main>
   <section class="card" id="now"></section>
+  <section class="card" id="warn" hidden></section>
 
   <section class="card">
     <h2>Погодинно на 3 дні</h2>
@@ -208,10 +215,10 @@ function fcUrlBasic(id){
     `&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m`+
     `&models=${id}&timezone=auto&forecast_days=${DAYS}&wind_speed_unit=ms`;
 }
-function fcUrl(id){
+function fcUrl(id, vis){
   return `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`+
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,weather_code`+
-    `&hourly=temperature_2m,precipitation,snowfall,weather_code,wind_speed_10m,wind_gusts_10m`+
+    `&hourly=temperature_2m,precipitation,snowfall,weather_code,wind_speed_10m,wind_gusts_10m${vis?',visibility':''}`+
     `&models=${id}&timezone=auto&forecast_days=${DAYS}&wind_speed_unit=ms`;
 }
 async function getJSON(u){ try{ const r=await fetch(u); return r.ok? await r.json() : null; }catch(e){ return null; } }
@@ -232,7 +239,7 @@ async function load(){
   const tok = ++LOADTOK;
   const st = document.getElementById("status");
   st.textContent = "Завантаження…";
-  const [res, ens] = await Promise.all([ Promise.all(MODELS.map(m=>getJSON(fcUrl(m.id)).then(d=>d||getJSON(fcUrlBasic(m.id))))), getEnsemble() ]);
+  const [res, ens] = await Promise.all([ Promise.all(MODELS.map(m=>getJSON(fcUrl(m.id,true)).then(d=>d||getJSON(fcUrl(m.id))).then(d=>d||getJSON(fcUrlBasic(m.id))))), getEnsemble() ]);
   if(tok !== LOADTOK) return; // тим часом вибрали інше місце
   RES = res.map((d,j)=> covers(d) ? d : null);
   ENS = ens;
@@ -240,7 +247,7 @@ async function load(){
   if(!ok){ st.innerHTML='<span class="err">Не вдалося отримати дані. Перевірте інтернет і натисніть «Оновити».</span>'; return; }
   const base = RES.find(Boolean);
   NOWISO = new Date(Date.now() + base.utc_offset_seconds*1000).toISOString().slice(0,13);
-  renderNow(); renderHourly(); renderDays();
+  renderNow(); renderWarnings(); renderHourly(); renderDays();
   const failed = MODELS.filter((m,j)=>m.grp!=="reg" && !RES[j]).map(short);
   const regOk = MODELS.filter((m,j)=>m.grp==="reg" && RES[j]).map(short);
   const regNo = MODELS.filter((m,j)=>m.grp==="reg" && !RES[j]).map(short);
@@ -365,6 +372,78 @@ function outlook24(){
   if(gmax.g!=null && gmax.g>=15) out.push(`💨 Сильний вітер: пориви до <b>${Math.round(gmax.g)} м/с</b> близько ${lbl(gmax.t)}.`);
   else if(wmax.ws!=null) out.push(wmax.ws>=10 ? `💨 Посилення вітру до <b>${Math.round(wmax.ws)} м/с</b> близько ${lbl(wmax.t)}.` : `💨 Вітер помірний, до ${Math.round(wmax.ws)} м/с${gmax.g!=null&&gmax.g>=8?`, пориви до ${Math.round(gmax.g)}`:""}.`);
   return `<div class="outlook"><b>Наступні 24 години</b><ul>${out.map(x=>`<li>${x}</li>`).join("")}</ul></div>`;
+}
+
+// ===== попередження: небезпечні явища на 48 годин за основними й регіональними моделями =====
+const FRZ = c => c===56||c===57||c===66||c===67;
+const WARN_H = 48;
+const WARN_DEFS = [
+  {ic:"🧊", name:"Ожеледиця на дорогах", need:["temperature_2m","precipitation"],
+   // мороз після опадів чи відлиги за попередню добу, крижані опади або туман на морозі
+   test:(H,i)=>{ const T=H.temperature_2m[i]; if(T==null||T>0) return false;
+     const wc=H.weather_code?.[i]; if(FRZ(wc)||isFog(wc)) return true;
+     for(let q=Math.max(0,i-24); q<=i; q++){ const p=H.precipitation[q], t=H.temperature_2m[q];
+       if(p>=0.1 && (t>0.3 || (!isSnow(H.weather_code?.[q]) && !(H.snowfall?.[q]>0)))) return true; }
+     return false; }},
+  {ic:"🌧", name:"Крижаний дощ (ожеледь)", need:["weather_code"], test:(H,i)=>FRZ(H.weather_code[i])},
+  {ic:"🌫", name:"Туман", need:["weather_code"], test:(H,i)=>isFog(H.weather_code[i]) || (H.visibility?.[i]!=null && H.visibility[i]<1000)},
+  {ic:"💨", name:"Сильний вітер", need:["wind_gusts_10m"], test:(H,i)=>H.wind_gusts_10m[i]>=15,
+   val:(H,i)=>H.wind_gusts_10m[i], agg:"max", fmt:v=>`пориви до ${Math.round(v)} м/с`},
+  {ic:"☔", name:"Значний дощ", need:["precipitation"],
+   test:(H,i)=>sum12(H.precipitation,i)-sum12(H.snowfall,i)>=15, val:(H,i)=>sum12(H.precipitation,i), agg:"max", fmt:v=>`до ${Math.round(v)} мм за 12 год`},
+  {ic:"❄️", name:"Значний сніг", need:["snowfall"], test:(H,i)=>sum12(H.snowfall,i)>=7, val:(H,i)=>sum12(H.snowfall,i), agg:"max", fmt:v=>`до ${Math.round(v)} см за 12 год`},
+  {ic:"🌨", name:"Мокрий сніг, налипання", need:["snowfall","temperature_2m"], test:(H,i)=>H.snowfall[i]>0 && H.temperature_2m[i]>=-1 && H.temperature_2m[i]<=1.5},
+  {ic:"🌬", name:"Хуртовина", need:["snowfall","wind_gusts_10m"], test:(H,i)=>H.snowfall[i]>0 && H.wind_gusts_10m[i]>=12},
+  {ic:"⛈", name:"Гроза", need:["weather_code"], test:(H,i)=>H.weather_code[i]>=95},
+  {ic:"🥶", name:"Сильний мороз", need:["temperature_2m"], test:(H,i)=>H.temperature_2m[i]!=null && H.temperature_2m[i]<=-10,
+   val:(H,i)=>H.temperature_2m[i], agg:"min", fmt:v=>`до ${Math.round(v)}°`},
+  {ic:"❄", name:"Заморозки", need:["temperature_2m"], warmOnly:true, test:(H,i)=>H.temperature_2m[i]!=null && H.temperature_2m[i]<=0,
+   val:(H,i)=>H.temperature_2m[i], agg:"min", fmt:v=>`до ${Math.round(v)}°`},
+  {ic:"🥵", name:"Сильна спека", need:["temperature_2m"], test:(H,i)=>H.temperature_2m[i]>=30,
+   val:(H,i)=>H.temperature_2m[i], agg:"max", fmt:v=>`до ${Math.round(v)}°`}
+];
+function sum12(a,i){ if(!a) return 0; let s=0; for(let q=Math.max(0,i-11); q<=i; q++) s+=a[q]||0; return s; }
+function hourRanges(ts, today){
+  // ts — впорядковані години ISO; сусідні (розрив до 2 год) зливаються в проміжки
+  const tomorrow = new Date(Date.parse(today+"T12:00Z")+864e5).toISOString().slice(0,10);
+  const dl = d => d===today? "сьогодні" : d===tomorrow? "завтра" : dayShort(d);
+  const rs=[]; ts.forEach(t=>{ const ms=Date.parse(t+":00Z"), last=rs[rs.length-1];
+    if(last && ms-last.e<=2*3600e3){ last.e=ms; last.b=t; } else rs.push({a:t,b:t,e:ms}); });
+  return rs.slice(0,3).map(x=>{ const da=x.a.slice(0,10), db=x.b.slice(0,10), ha=x.a.slice(11,16), hb=x.b.slice(11,16);
+    return x.a===x.b? `${dl(da)} близько ${ha}` : da===db? `${dl(da)} ${ha}–${hb}` : `${dl(da)} ${ha} – ${dl(db)} ${hb}`; }).join("; ") + (rs.length>3?" і далі":"");
+}
+function renderWarnings(){
+  const el=document.getElementById("warn"), base=RES.find(Boolean);
+  const bt=base.hourly.time, s0=bt.findIndex(t=>t.slice(0,13)===NOWISO);
+  if(s0<0){ el.hidden=true; return; }
+  const times=bt.slice(s0, s0+WARN_H), today=NOWISO.slice(0,10), month=+today.slice(5,7);
+  const js=MODELS.map((m,j)=>j).filter(j=>MODELS[j].grp!=="extra" && RES[j]);
+  const items=[];
+  WARN_DEFS.forEach(def=>{
+    if(def.warmOnly && (month<4 || month>10)) return;
+    let M=0; const who=[], cnt=times.map(()=>0); let ext=null;
+    js.forEach(j=>{ const H=RES[j].hourly;
+      if(!def.need.every(k=>H[k] && H[k].some(v=>v!=null))) return;
+      const off=H.time.indexOf(times[0]); if(off<0) return;
+      let hit=false, covered=false;
+      times.forEach((t,k)=>{ const i=off+k; if(H.time[i]!==t || H.temperature_2m?.[i]==null) return; covered=true;
+        if(def.test(H,i)){ hit=true; cnt[k]++;
+          if(def.val){ const v=def.val(H,i); if(v!=null && (ext==null || (def.agg==="max"? v>ext : v<ext))) ext=v; } } });
+      if(!covered) return; M++; if(hit) who.push(short(MODELS[j]));
+    });
+    if(!who.length) return;
+    const thr=Math.max(1, Math.ceil(M*0.3));
+    let hrs=times.filter((t,k)=>cnt[k]>=thr); if(!hrs.length) hrs=times.filter((t,k)=>cnt[k]>0);
+    items.push({def, n:who.length, M, who, when:hourRanges(hrs,today), ext});
+  });
+  el.hidden=false;
+  const note='<div class="sub" style="margin-top:6px">Ожеледицю й туман моделі ловлять гірше за синоптиків — звіряйтеся з <a href="https://www.meteo.gov.ua/" target="_blank" rel="noopener" style="color:var(--rain)">попередженнями гідрометцентру</a>.</div>';
+  if(!items.length){ el.innerHTML='<h2>Попередження на 48 годин</h2><div class="sub">Небезпечних явищ моделі не дають.</div>'+note; return; }
+  items.sort((a,b)=> b.n/b.M - a.n/a.M);
+  el.innerHTML = `<h2>Попередження на 48 годин</h2><ul class="wl">${items.map(x=>{
+    const sh=x.n/x.M, lv = sh>=0.6? ["bad","ймовірно"] : sh>=0.3? ["warn","можливо"] : ["ens","окремі моделі"];
+    return `<li>${x.def.ic} <span class="wn">${x.def.name}</span><span class="lv ${lv[0]}">${lv[1]} · ${x.n} з ${x.M}</span>
+      <div>${x.when}${x.ext!=null && x.def.fmt? " · "+x.def.fmt(x.ext):""}</div><span class="small">${x.who.join(", ")}</span></li>`; }).join("")}</ul>`+note;
 }
 
 function renderHourly(){
