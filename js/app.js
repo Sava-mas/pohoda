@@ -400,7 +400,7 @@ function chartPick(e){
   const r=svg.getBoundingClientRect(), px=(e.clientX-r.left)*CUR.W/r.width;
   setCursor(Math.round((px-CUR.L)/(CUR.W-CUR.L-CUR.R)*(CUR.N-1)), "auto");
 }
-chartEl.addEventListener("pointerdown", e=>{ dragging=true; try{chartEl.setPointerCapture(e.pointerId);}catch(_){} chartPick(e); });
+chartEl.addEventListener("pointerdown", e=>{ dragging=true; if(e.pointerType==="mouse") e.preventDefault(); try{ window.getSelection().removeAllRanges(); }catch(_){} try{chartEl.setPointerCapture(e.pointerId);}catch(_){} chartPick(e); });
 chartEl.addEventListener("pointermove", e=>{ if(dragging) chartPick(e); });
 ["pointerup","pointercancel","pointerleave"].forEach(n=>chartEl.addEventListener(n, ()=>{ dragging=false; }));
 

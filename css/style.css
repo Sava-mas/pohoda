@@ -142,3 +142,7 @@ details summary::marker{color:var(--mute)}
 a{color:var(--accent)}
 @media (min-width:700px){ .heroBox .hero .t{font-size:68px} main{padding:4px 14px 32px} }
 @media (prefers-reduced-motion:reduce){ *{scroll-behavior:auto!important;transition:none!important} }
+
+/* підписи на графіку не виділяються під час перетягування лінії (інакше браузер малює сині прямокутники виділення) */
+#chart, #chart svg, #chart text, #legend{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#chart svg{-webkit-tap-highlight-color:transparent}
